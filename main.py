@@ -4,7 +4,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
+from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
     cmd_start,
@@ -14,6 +14,7 @@ from bot.handlers import (
     cmd_export,
     handle_text,
     handle_voice,
+    handle_delete_callback,
 )
 
 load_dotenv()
@@ -43,6 +44,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^del:"))
 
     logger.info("Bot started")
     app.run_polling()

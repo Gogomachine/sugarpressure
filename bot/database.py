@@ -68,6 +68,20 @@ def get_pressure_history(user_id: int, days: int = 30) -> list[PressureReading]:
     return readings
 
 
+def delete_reading(user_id: int, reading_type: str, reading_id: int) -> bool:
+    """Delete a reading by type ('pressure' or 'glucose') and id. Returns True if deleted."""
+    model = PressureReading if reading_type == "pressure" else GlucoseReading
+    session = Session()
+    reading = session.query(model).filter(model.id == reading_id, model.user_id == user_id).first()
+    if reading:
+        session.delete(reading)
+        session.commit()
+        session.close()
+        return True
+    session.close()
+    return False
+
+
 def get_glucose_history(user_id: int, days: int = 30) -> list[GlucoseReading]:
     session = Session()
     since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
