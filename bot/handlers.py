@@ -7,7 +7,7 @@ import tempfile
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from bot.database import add_pressure, add_glucose, delete_reading, get_pressure_history, get_glucose_history
+from bot.database import add_pressure, add_glucose, delete_reading, delete_all_readings, get_pressure_history, get_glucose_history
 from bot.parser import parse_message, PressureResult, GlucoseResult
 from bot.voice import transcribe_voice
 from bot.charts import generate_pressure_chart, generate_glucose_chart
@@ -145,6 +145,18 @@ async def cmd_export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("Да, удалить всё", callback_data="clear:confirm"),
+        InlineKeyboardButton("Отмена", callback_data="clear:cancel"),
+    ]])
+    await update.message.reply_text(
+        "Вы уверены, что хотите удалить ВСЕ свои записи?\n"
+        "Это действие необратимо.",
+        reply_markup=keyboard,
+    )
+
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming text messages."""
     text = update.message.text
@@ -239,3 +251,16 @@ async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_text("Запись удалена.")
     else:
         await query.edit_message_text("Запись не найдена (возможно, уже удалена).")
+
+
+async def handle_clear_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle confirmation/cancellation of clearing all records."""
+    query = update.callback_query
+    await query.answer()
+
+    action = query.data.split(":")[1]
+    if action == "confirm":
+        count = delete_all_readings(update.effective_user.id)
+        await query.edit_message_text(f"Удалено записей: {count}.")
+    else:
+        await query.edit_message_text("Отменено.")

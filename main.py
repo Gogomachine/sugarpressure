@@ -15,6 +15,8 @@ from bot.handlers import (
     handle_text,
     handle_voice,
     handle_delete_callback,
+    handle_clear_callback,
+    cmd_clear,
 )
 
 load_dotenv()
@@ -41,10 +43,12 @@ def main():
     app.add_handler(CommandHandler("history", cmd_history))
     app.add_handler(CommandHandler("chart", cmd_chart))
     app.add_handler(CommandHandler("export", cmd_export))
+    app.add_handler(CommandHandler("clear", cmd_clear))
 
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^del:"))
+    app.add_handler(CallbackQueryHandler(handle_clear_callback, pattern=r"^clear:"))
 
     logger.info("Bot started")
     app.run_polling()
