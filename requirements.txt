@@ -1,0 +1,5 @@
+python-telegram-bot==21.6
+openai-whisper==20240930
+matplotlib==3.9.2
+reportlab==4.2.5
+torch==2.5.0
