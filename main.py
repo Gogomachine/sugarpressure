@@ -4,6 +4,7 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from telegram import BotCommand
 from telegram.ext import ApplicationBuilder, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from bot.handlers import (
@@ -49,6 +50,18 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     app.add_handler(CallbackQueryHandler(handle_delete_callback, pattern=r"^del:"))
     app.add_handler(CallbackQueryHandler(handle_clear_callback, pattern=r"^clear:"))
+
+    async def post_init(application):
+        await application.bot.set_my_commands([
+            BotCommand("start", "Начать работу"),
+            BotCommand("help", "Справка"),
+            BotCommand("history", "История записей"),
+            BotCommand("chart", "Графики"),
+            BotCommand("export", "Выгрузка CSV + PDF"),
+            BotCommand("clear", "Удалить все записи"),
+        ])
+
+    app.post_init = post_init
 
     logger.info("Bot started")
     app.run_polling()
