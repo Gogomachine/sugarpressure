@@ -11,6 +11,16 @@ from datetime import datetime
 from bot.database import get_pressure_history, get_glucose_history
 
 
+def _format_date_axis(ax, days: int):
+    """Configure the X-axis date formatting based on the time range."""
+    if days <= 7:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m %H:%M"))
+    else:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m.%y"))
+    ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=10))
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=9)
+
+
 def generate_pressure_chart(user_id: int, days: int = 30) -> bytes | None:
     """Generate a blood pressure chart and return PNG bytes."""
     readings = get_pressure_history(user_id, days)
@@ -31,11 +41,9 @@ def generate_pressure_chart(user_id: int, days: int = 30) -> bytes | None:
 
     ax.set_title(f"Артериальное давление (последние {days} дн.)")
     ax.set_ylabel("мм рт.ст.")
-    ax.set_xlabel("Дата")
     ax.legend(loc="upper left", fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-    fig.autofmt_xdate()
+    _format_date_axis(ax, days)
     fig.tight_layout()
 
     buf = io.BytesIO()
@@ -63,11 +71,9 @@ def generate_glucose_chart(user_id: int, days: int = 30) -> bytes | None:
 
     ax.set_title(f"Уровень глюкозы (последние {days} дн.)")
     ax.set_ylabel("ммоль/л")
-    ax.set_xlabel("Дата")
     ax.legend(loc="upper left", fontsize=8)
     ax.grid(True, alpha=0.3)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m"))
-    fig.autofmt_xdate()
+    _format_date_axis(ax, days)
     fig.tight_layout()
 
     buf = io.BytesIO()
