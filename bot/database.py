@@ -16,6 +16,15 @@ class PressureReading(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
 
 
+class PulseReading(Base):
+    __tablename__ = "pulse_readings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    value = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+
 class GlucoseReading(Base):
     __tablename__ = "glucose_readings"
 
@@ -38,6 +47,16 @@ def add_pressure(user_id: int, systolic: int, diastolic: int, pulse: int | None 
         diastolic=diastolic,
         pulse=pulse,
     )
+    session.add(reading)
+    session.commit()
+    session.refresh(reading)
+    session.close()
+    return reading
+
+
+def add_pulse(user_id: int, value: int) -> PulseReading:
+    session = Session()
+    reading = PulseReading(user_id=user_id, value=value)
     session.add(reading)
     session.commit()
     session.refresh(reading)
@@ -72,15 +91,30 @@ def delete_all_readings(user_id: int) -> int:
     """Delete all readings for a user. Returns total number of deleted records."""
     session = Session()
     p = session.query(PressureReading).filter(PressureReading.user_id == user_id).delete()
+    pu = session.query(PulseReading).filter(PulseReading.user_id == user_id).delete()
     g = session.query(GlucoseReading).filter(GlucoseReading.user_id == user_id).delete()
     session.commit()
     session.close()
-    return p + g
+    return p + pu + g
+
+
+def get_pulse_history(user_id: int, days: int = 30) -> list[PulseReading]:
+    session = Session()
+    since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    readings = (
+        session.query(PulseReading)
+        .filter(PulseReading.user_id == user_id, PulseReading.timestamp >= since)
+        .order_by(PulseReading.timestamp)
+        .all()
+    )
+    session.close()
+    return readings
 
 
 def delete_reading(user_id: int, reading_type: str, reading_id: int) -> bool:
-    """Delete a reading by type ('pressure' or 'glucose') and id. Returns True if deleted."""
-    model = PressureReading if reading_type == "pressure" else GlucoseReading
+    """Delete a reading by type ('pressure', 'pulse' or 'glucose') and id. Returns True if deleted."""
+    models = {"pressure": PressureReading, "pulse": PulseReading, "glucose": GlucoseReading}
+    model = models.get(reading_type, GlucoseReading)
     session = Session()
     reading = session.query(model).filter(model.id == reading_id, model.user_id == user_id).first()
     if reading:

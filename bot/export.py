@@ -5,15 +5,16 @@ import io
 import os
 from fpdf import FPDF
 
-from bot.database import get_pressure_history, get_glucose_history
+from bot.database import get_pressure_history, get_pulse_history, get_glucose_history
 
 
 def export_csv(user_id: int, days: int = 90) -> bytes | None:
-    """Export pressure and glucose data as CSV bytes."""
+    """Export pressure, pulse and glucose data as CSV bytes."""
     pressures = get_pressure_history(user_id, days)
+    pulses = get_pulse_history(user_id, days)
     glucoses = get_glucose_history(user_id, days)
 
-    if not pressures and not glucoses:
+    if not pressures and not pulses and not glucoses:
         return None
 
     output = io.StringIO()
@@ -30,6 +31,15 @@ def export_csv(user_id: int, days: int = 90) -> bytes | None:
             r.pulse or "",
         ])
 
+    for r in pulses:
+        writer.writerow([
+            "Пульс",
+            r.timestamp.strftime("%d.%m.%Y %H:%M"),
+            r.value,
+            "",
+            "",
+        ])
+
     for r in glucoses:
         writer.writerow([
             "Глюкоза",
@@ -43,11 +53,12 @@ def export_csv(user_id: int, days: int = 90) -> bytes | None:
 
 
 def export_pdf(user_id: int, days: int = 90) -> bytes | None:
-    """Export pressure and glucose data as PDF bytes."""
+    """Export pressure, pulse and glucose data as PDF bytes."""
     pressures = get_pressure_history(user_id, days)
+    pulses = get_pulse_history(user_id, days)
     glucoses = get_glucose_history(user_id, days)
 
-    if not pressures and not glucoses:
+    if not pressures and not pulses and not glucoses:
         return None
 
     font_dir = os.path.join(os.path.dirname(__file__), "fonts")
@@ -82,6 +93,22 @@ def export_pdf(user_id: int, days: int = 90) -> bytes | None:
             pdf.cell(40, 7, str(r.systolic), border=1)
             pdf.cell(40, 7, str(r.diastolic), border=1)
             pdf.cell(40, 7, str(r.pulse) if r.pulse else "-", border=1)
+            pdf.ln()
+
+        pdf.ln(5)
+
+    if pulses:
+        pdf.set_font_size(12)
+        pdf.cell(0, 8, "Пульс", ln=True)
+        pdf.set_font_size(10)
+
+        pdf.cell(80, 7, "Дата", border=1)
+        pdf.cell(60, 7, "Значение (уд/мин)", border=1)
+        pdf.ln()
+
+        for r in pulses:
+            pdf.cell(80, 7, r.timestamp.strftime("%d.%m.%Y %H:%M"), border=1)
+            pdf.cell(60, 7, str(r.value), border=1)
             pdf.ln()
 
         pdf.ln(5)
