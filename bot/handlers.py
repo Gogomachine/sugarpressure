@@ -243,6 +243,11 @@ async def _save_result(update: Update, result):
             reply_markup=keyboard,
         )
 
+    try:
+        await update.message.delete()
+    except Exception:
+        logger.debug("Could not delete original message for user %s", user_id)
+
 
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle inline button press to delete a reading."""
