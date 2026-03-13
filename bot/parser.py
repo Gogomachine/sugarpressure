@@ -12,6 +12,11 @@ class PressureResult:
 
 
 @dataclass
+class PulseResult:
+    value: int
+
+
+@dataclass
 class GlucoseResult:
     value: float
 
@@ -30,10 +35,15 @@ def parse_message(text: str) -> PressureResult | GlucoseResult | None:
     """
     text = text.strip().lower()
 
-    # Try pressure
+    # Try pressure (before pulse, since pressure can contain pulse)
     pressure = _parse_pressure(text)
     if pressure:
         return pressure
+
+    # Try pulse (standalone)
+    pulse = _parse_pulse(text)
+    if pulse:
+        return pulse
 
     # Try glucose
     glucose = _parse_glucose(text)
@@ -63,6 +73,23 @@ def _parse_pressure(text: str) -> PressureResult | None:
         return None
 
     return PressureResult(systolic=systolic, diastolic=diastolic, pulse=pulse)
+
+
+def _parse_pulse(text: str) -> PulseResult | None:
+    pattern = r"пульс\s+(\d{2,3})"
+    match = re.search(pattern, text)
+    if not match:
+        return None
+
+    # Don't match if this is part of a pressure reading
+    if re.search(r"давлени[ея]", text):
+        return None
+
+    value = int(match.group(1))
+    if not (30 <= value <= 250):
+        return None
+
+    return PulseResult(value=value)
 
 
 def _parse_glucose(text: str) -> GlucoseResult | None:

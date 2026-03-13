@@ -7,10 +7,10 @@ import tempfile
 from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from bot.database import add_pressure, add_glucose, delete_reading, delete_all_readings, get_pressure_history, get_glucose_history
-from bot.parser import parse_message, PressureResult, GlucoseResult
+from bot.database import add_pressure, add_pulse, add_glucose, delete_reading, delete_all_readings, get_pressure_history, get_pulse_history, get_glucose_history
+from bot.parser import parse_message, PressureResult, PulseResult, GlucoseResult
 from bot.voice import transcribe_voice
-from bot.charts import generate_pressure_chart, generate_glucose_chart
+from bot.charts import generate_pressure_chart, generate_pulse_chart, generate_glucose_chart
 from bot.export import export_csv, export_pdf
 
 logger = logging.getLogger(__name__)
@@ -18,15 +18,18 @@ logger = logging.getLogger(__name__)
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привет! Я бот-дневник здоровья.\n\n"
-        "Отправьте мне голосовое или текстовое сообщение:\n"
-        '  • "Давление 120/80"\n'
-        '  • "Давление 130 на 85 пульс 72"\n'
-        '  • "Глюкоза 5.4"\n'
-        '  • "Сахар 6,2"\n\n'
-        "Голосом глюкозу произносите через «точка»:\n"
-        '  «Глюкоза пять точка два» (5.2)\n'
-        '  «Сахар шесть точка пять» (6.5)\n\n'
+        "Как пользоваться ботом:\n\n"
+        "1. Отправьте голосовое сообщение, например:\n"
+        "   «Давление сто двадцать на восемьдесят»\n"
+        "   «Глюкоза пять точка четыре»\n"
+        "   «Пульс 80»\n\n"
+        "⚠️ Глюкозу голосом произносите через «точка»:\n"
+        "   «пять точка два» → 5.2\n"
+        "   «шесть точка пять» → 6.5\n\n"
+        "2. Или напишите текстом:\n"
+        "   «Давление 120/80»\n"
+        "   «Сахар 5.4»\n"
+        "   «Пульс 80»\n\n"
         "Команды:\n"
         "/history — последние записи\n"
         "/chart — графики за 30 дней\n"
@@ -38,16 +41,18 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Как пользоваться:\n\n"
+        "Как пользоваться ботом:\n\n"
         "1. Отправьте голосовое сообщение, например:\n"
-        '   «Давление сто двадцать на восемьдесят»\n'
-        '   «Глюкоза пять точка четыре»\n\n'
+        "   «Давление сто двадцать на восемьдесят»\n"
+        "   «Глюкоза пять точка четыре»\n"
+        "   «Пульс 80»\n\n"
         "⚠️ Глюкозу голосом произносите через «точка»:\n"
-        '   «пять точка два» → 5.2\n'
-        '   «шесть точка пять» → 6.5\n\n'
+        "   «пять точка два» → 5.2\n"
+        "   «шесть точка пять» → 6.5\n\n"
         "2. Или напишите текстом:\n"
-        '   «Давление 120/80»\n'
-        '   «Сахар 5.4»\n\n'
+        "   «Давление 120/80»\n"
+        "   «Сахар 5.4»\n"
+        "   «Пульс 80»\n\n"
         "Команды:\n"
         "/history [дней] — история записей (по умолчанию 30)\n"
         "/chart [дней] — графики (по умолчанию 30)\n"
@@ -66,9 +71,10 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = update.effective_user.id
     pressures = get_pressure_history(user_id, days)
+    pulses = get_pulse_history(user_id, days)
     glucoses = get_glucose_history(user_id, days)
 
-    if not pressures and not glucoses:
+    if not pressures and not pulses and not glucoses:
         await update.message.reply_text(f"Нет записей за последние {days} дней.")
         return
 
@@ -83,6 +89,15 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         if len(pressures) > 20:
             lines.append(f"  ... и ещё {len(pressures) - 20} записей")
+
+    if pulses:
+        lines.append("\nПульс:")
+        for r in pulses[-20:]:
+            lines.append(
+                f"  {r.timestamp.strftime('%d.%m %H:%M')} — {r.value} уд/мин"
+            )
+        if len(pulses) > 20:
+            lines.append(f"  ... и ещё {len(pulses) - 20} записей")
 
     if glucoses:
         lines.append("\nГлюкоза:")
@@ -110,6 +125,11 @@ async def cmd_chart(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pressure_png = generate_pressure_chart(user_id, days)
     if pressure_png:
         await update.message.reply_photo(photo=pressure_png, caption="Артериальное давление")
+        sent = True
+
+    pulse_png = generate_pulse_chart(user_id, days)
+    if pulse_png:
+        await update.message.reply_photo(photo=pulse_png, caption="Пульс")
         sent = True
 
     glucose_png = generate_glucose_chart(user_id, days)
@@ -175,7 +195,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result is None:
         await update.message.reply_text(
             "Не удалось распознать данные.\n"
-            'Попробуйте: "Давление 120/80" или "Глюкоза 5.4"'
+            'Попробуйте: "Давление 120/80", "Пульс 72" или "Глюкоза 5.4"'
         )
         return
 
@@ -232,6 +252,16 @@ async def _save_result(update: Update, result):
             f"({reading.timestamp.strftime('%d.%m.%Y %H:%M')})",
             reply_markup=keyboard,
         )
+    elif isinstance(result, PulseResult):
+        reading = add_pulse(user_id, result.value)
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🗑 Удалить", callback_data=f"del:pulse:{reading.id}")
+        ]])
+        await update.message.reply_text(
+            f"Записан пульс: {result.value} уд/мин\n"
+            f"({reading.timestamp.strftime('%d.%m.%Y %H:%M')})",
+            reply_markup=keyboard,
+        )
     elif isinstance(result, GlucoseResult):
         reading = add_glucose(user_id, result.value)
         keyboard = InlineKeyboardMarkup([[
@@ -242,6 +272,11 @@ async def _save_result(update: Update, result):
             f"({reading.timestamp.strftime('%d.%m.%Y %H:%M')})",
             reply_markup=keyboard,
         )
+
+    try:
+        await update.message.delete()
+    except Exception:
+        logger.debug("Could not delete original message for user %s", user_id)
 
 
 async def handle_delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
