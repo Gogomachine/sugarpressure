@@ -3,9 +3,23 @@
 import csv
 import io
 import os
+from datetime import timedelta
 from fpdf import FPDF
 
 from bot.database import get_pressure_history, get_pulse_history, get_glucose_history
+
+
+# Normal ranges for color coding
+SYSTOLIC_MAX = 130
+DIASTOLIC_MAX = 85
+PULSE_MIN = 60
+PULSE_MAX = 90
+GLUCOSE_MAX = 6.1
+
+# Colors (R, G, B)
+COLOR_NORMAL = (200, 240, 200)      # light green
+COLOR_ELEVATED = (255, 200, 200)    # light red
+COLOR_HEADER = (255, 255, 255)      # white (no fill for headers)
 
 
 def export_csv(user_id: int, days: int = 90) -> bytes | None:
@@ -77,9 +91,51 @@ def export_pdf(user_id: int, days: int = 90) -> bytes | None:
     pdf.cell(0, 10, "Дневник здоровья — отчёт для врача", ln=True, align="C")
     pdf.ln(5)
 
-    if pressures:
+    if pressures or pulses:
+        # Merge pulse readings into pressure rows by matching timestamps (within 5 min)
+        merged = []
+        used_pulse_ids = set()
+
+        for r in pressures:
+            pulse_val = r.pulse
+            if not pulse_val:
+                # Try to find a standalone pulse reading close in time
+                for p in pulses:
+                    if p.id in used_pulse_ids:
+                        continue
+                    if abs((p.timestamp - r.timestamp).total_seconds()) <= 300:
+                        pulse_val = p.value
+                        used_pulse_ids.add(p.id)
+                        break
+            else:
+                # Mark matching standalone pulse as used to avoid duplicates
+                for p in pulses:
+                    if p.id in used_pulse_ids:
+                        continue
+                    if abs((p.timestamp - r.timestamp).total_seconds()) <= 300:
+                        used_pulse_ids.add(p.id)
+                        break
+            merged.append({
+                "ts": r.timestamp,
+                "sys": r.systolic,
+                "dia": r.diastolic,
+                "pulse": pulse_val,
+            })
+
+        # Add remaining standalone pulse readings as pulse-only rows
+        for p in pulses:
+            if p.id not in used_pulse_ids:
+                merged.append({
+                    "ts": p.timestamp,
+                    "sys": None,
+                    "dia": None,
+                    "pulse": p.value,
+                })
+
+        merged.sort(key=lambda x: x["ts"])
+
         pdf.set_font_size(12)
-        pdf.cell(0, 8, "Артериальное давление", ln=True)
+        pdf.cell(0, 8, "Артериальное давление и пульс", ln=True)
         pdf.set_font_size(10)
 
         pdf.cell(50, 7, "Дата", border=1)
@@ -88,27 +144,33 @@ def export_pdf(user_id: int, days: int = 90) -> bytes | None:
         pdf.cell(40, 7, "Пульс", border=1)
         pdf.ln()
 
-        for r in pressures:
-            pdf.cell(50, 7, r.timestamp.strftime("%d.%m.%Y %H:%M"), border=1)
-            pdf.cell(40, 7, str(r.systolic), border=1)
-            pdf.cell(40, 7, str(r.diastolic), border=1)
-            pdf.cell(40, 7, str(r.pulse) if r.pulse else "-", border=1)
-            pdf.ln()
+        for row in merged:
+            pdf.cell(50, 7, row["ts"].strftime("%d.%m.%Y %H:%M"), border=1)
 
-        pdf.ln(5)
+            # Systolic
+            if row["sys"] is not None:
+                color = COLOR_ELEVATED if row["sys"] > SYSTOLIC_MAX else COLOR_NORMAL
+                pdf.set_fill_color(*color)
+                pdf.cell(40, 7, str(row["sys"]), border=1, fill=True)
+            else:
+                pdf.cell(40, 7, "-", border=1)
 
-    if pulses:
-        pdf.set_font_size(12)
-        pdf.cell(0, 8, "Пульс", ln=True)
-        pdf.set_font_size(10)
+            # Diastolic
+            if row["dia"] is not None:
+                color = COLOR_ELEVATED if row["dia"] > DIASTOLIC_MAX else COLOR_NORMAL
+                pdf.set_fill_color(*color)
+                pdf.cell(40, 7, str(row["dia"]), border=1, fill=True)
+            else:
+                pdf.cell(40, 7, "-", border=1)
 
-        pdf.cell(80, 7, "Дата", border=1)
-        pdf.cell(60, 7, "Значение (уд/мин)", border=1)
-        pdf.ln()
+            # Pulse
+            if row["pulse"] is not None:
+                color = COLOR_ELEVATED if row["pulse"] < PULSE_MIN or row["pulse"] > PULSE_MAX else COLOR_NORMAL
+                pdf.set_fill_color(*color)
+                pdf.cell(40, 7, str(row["pulse"]), border=1, fill=True)
+            else:
+                pdf.cell(40, 7, "-", border=1)
 
-        for r in pulses:
-            pdf.cell(80, 7, r.timestamp.strftime("%d.%m.%Y %H:%M"), border=1)
-            pdf.cell(60, 7, str(r.value), border=1)
             pdf.ln()
 
         pdf.ln(5)
@@ -124,7 +186,9 @@ def export_pdf(user_id: int, days: int = 90) -> bytes | None:
 
         for r in glucoses:
             pdf.cell(80, 7, r.timestamp.strftime("%d.%m.%Y %H:%M"), border=1)
-            pdf.cell(60, 7, f"{r.value:.1f}", border=1)
+            color = COLOR_ELEVATED if r.value > GLUCOSE_MAX else COLOR_NORMAL
+            pdf.set_fill_color(*color)
+            pdf.cell(60, 7, f"{r.value:.1f}", border=1, fill=True)
             pdf.ln()
 
     return bytes(pdf.output())
